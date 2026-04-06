@@ -22,7 +22,10 @@ import { aboutCommand } from '../ui/commands/aboutCommand.js';
 import { agentsCommand } from '../ui/commands/agentsCommand.js';
 import { authCommand } from '../ui/commands/authCommand.js';
 import { bugCommand } from '../ui/commands/bugCommand.js';
-import { chatCommand, debugCommand } from '../ui/commands/chatCommand.js';
+import {
+  chatCommand,
+  debugCommand as checkpointDebugCommand,
+} from '../ui/commands/chatCommand.js';
 import { clearCommand } from '../ui/commands/clearCommand.js';
 import { commandsCommand } from '../ui/commands/commandsCommand.js';
 import { compressCommand } from '../ui/commands/compressCommand.js';
@@ -30,6 +33,7 @@ import { copyCommand } from '../ui/commands/copyCommand.js';
 import { corgiCommand } from '../ui/commands/corgiCommand.js';
 import { docsCommand } from '../ui/commands/docsCommand.js';
 import { directoryCommand } from '../ui/commands/directoryCommand.js';
+import { debugCommand } from '../ui/commands/debugCommand.js';
 import { editorCommand } from '../ui/commands/editorCommand.js';
 import { extensionsCommand } from '../ui/commands/extensionsCommand.js';
 import { footerCommand } from '../ui/commands/footerCommand.js';
@@ -103,12 +107,15 @@ export class BuiltinCommandLoader implements ICommandLoader {
       }
 
       return withNestedCompatibility.some(
-        (cmd) => cmd.name === debugCommand.name,
+        (cmd) => cmd.name === checkpointDebugCommand.name,
       )
         ? withNestedCompatibility
         : [
             ...withNestedCompatibility,
-            { ...debugCommand, suggestionGroup: 'checkpoints' },
+            {
+              ...checkpointDebugCommand,
+              suggestionGroup: 'checkpoints',
+            },
           ];
     };
 
@@ -130,6 +137,7 @@ export class BuiltinCommandLoader implements ICommandLoader {
       compressCommand,
       copyCommand,
       corgiCommand,
+      debugCommand,
       docsCommand,
       directoryCommand,
       editorCommand,

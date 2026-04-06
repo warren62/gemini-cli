@@ -5,6 +5,10 @@
  */
 
 import { z } from 'zod';
+import {
+  IdeBreakpointSchema,
+  IdeDebugStopSchema,
+} from '../debug/types.js';
 
 /**
  * A file that is open in the IDE.
@@ -58,6 +62,14 @@ export const IdeContextSchema = z.object({
        * Whether the workspace is trusted.
        */
       isTrusted: z.boolean().optional(),
+      /**
+       * The source breakpoints currently known by the IDE.
+       */
+      breakpoints: z.array(IdeBreakpointSchema).optional(),
+      /**
+       * The latest paused debug stop snapshot, if any.
+       */
+      lastDebugStop: IdeDebugStopSchema.optional(),
     })
     .optional(),
 });
