@@ -332,6 +332,19 @@ export class IDEServer {
 
         try {
           await transport.handleRequest(req, res, req.body);
+
+          if (
+            this.openFilesManager &&
+            transport.sessionId &&
+            !sessionsWithInitialNotification.has(transport.sessionId)
+          ) {
+            sendIdeContextUpdateNotification(
+              transport,
+              this.log.bind(this),
+              this.openFilesManager,
+            );
+            sessionsWithInitialNotification.add(transport.sessionId);
+          }
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error';
