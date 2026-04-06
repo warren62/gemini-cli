@@ -216,18 +216,39 @@ export class IDEServer {
       const mcpServer = createMcpServer(this.diffManager, this.log);
 
       this.openFilesManager = new OpenFilesManager(context);
-      this.openFilesManager.setBreakpoints(
-        serializeBreakpoints(vscode.debug.breakpoints),
+
+      const refreshBreakpointSnapshot = () => {
+        this.openFilesManager?.setBreakpoints(
+          serializeBreakpoints(vscode.debug.breakpoints),
+        );
+      };
+
+      refreshBreakpointSnapshot();
+
+      const bootstrapRefreshTimers = Array.from({ length: 10 }, (_, index) =>
+        setTimeout(
+          () => {
+            refreshBreakpointSnapshot();
+          },
+          250 * (index + 1),
+        ),
       );
 
       const onDidChangeSubscription = this.openFilesManager.onDidChange(() => {
         this.broadcastIdeContextUpdate();
       });
       const breakpointSubscription = vscode.debug.onDidChangeBreakpoints(() => {
-        this.openFilesManager?.setBreakpoints(
-          serializeBreakpoints(vscode.debug.breakpoints),
-        );
+        refreshBreakpointSnapshot();
       });
+      const openDocumentSubscription = vscode.workspace.onDidOpenTextDocument(
+        () => {
+          refreshBreakpointSnapshot();
+        },
+      );
+      const visibleEditorsSubscription =
+        vscode.window.onDidChangeVisibleTextEditors(() => {
+          refreshBreakpointSnapshot();
+        });
       const debugTrackerFactory = vscode.debug.registerDebugAdapterTrackerFactory(
         '*',
         {
@@ -255,7 +276,16 @@ export class IDEServer {
       context.subscriptions.push(
         onDidChangeSubscription,
         breakpointSubscription,
+        openDocumentSubscription,
+        visibleEditorsSubscription,
         debugTrackerFactory,
+        {
+          dispose: () => {
+            for (const timer of bootstrapRefreshTimers) {
+              clearTimeout(timer);
+            }
+          },
+        },
       );
       const onDidChangeDiffSubscription = this.diffManager.onDidChange(
         (notification) => {
