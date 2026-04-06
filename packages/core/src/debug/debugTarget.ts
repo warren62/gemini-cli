@@ -4,9 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DebugBreakpointTargetSchema, type DebugBreakpointTarget } from './types.js';
+import {
+  DebugBreakpointTargetSchema,
+  type DebugBreakpointTarget,
+} from './types.js';
 
-const DEBUG_TARGET_REGEX = /^@?(?<filePath>.+):(?<line>\d+)(?::(?<column>\d+))?$/;
+const DEBUG_TARGET_REGEX =
+  /^@?(?<filePath>.+?)(?::(?<line>\d+))(?::(?<column>\d+))?$/;
 
 export function isDebugBreakpointTarget(value: string): boolean {
   return DEBUG_TARGET_REGEX.test(value.trim());
