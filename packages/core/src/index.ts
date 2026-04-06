@@ -160,6 +160,11 @@ export {
 export * from './ide/constants.js';
 export * from './ide/types.js';
 
+// Export debug logic
+export * from './debug/types.js';
+export * from './debug/debugTarget.js';
+export * from './debug/debugConfig.js';
+
 // Export Shell Execution Service
 export * from './services/shellExecutionService.js';
 export * from './services/sandboxManager.js';

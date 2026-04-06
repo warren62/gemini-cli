@@ -7,16 +7,12 @@
 import {
   ideContextStore,
   type MessageActionReturn,
-} from '@google/gemini-cli-core';
-import {
   discoverDebugConfiguration,
   loadDebugConfiguration,
-} from '@google/gemini-cli-core/src/debug/debugConfig.js';
-import { parseDebugBreakpointTarget } from '@google/gemini-cli-core/src/debug/debugTarget.js';
-import type {
-  IdeBreakpoint,
-  IdeDebugStop,
-} from '@google/gemini-cli-core/src/debug/types.js';
+  parseDebugBreakpointTarget,
+  type IdeBreakpoint,
+  type IdeDebugStop,
+} from '@google/gemini-cli-core';
 import type { SlashCommand, SlashCommandActionReturn } from './types.js';
 import { CommandKind } from './types.js';
 
