@@ -27,6 +27,7 @@ import { tmpdir } from '@google/gemini-cli-core';
 import type { z } from 'zod';
 import type { DiffManager } from './diff-manager.js';
 import { OpenFilesManager } from './open-files-manager.js';
+import { captureDebugStop, serializeBreakpoints } from './debug-state.js';
 
 class CORSError extends Error {
   constructor(message: string) {
@@ -46,6 +47,25 @@ interface WritePortAndWorkspaceArgs {
   authToken: string;
   portFile: string | undefined;
   log: (message: string) => void;
+}
+
+interface StoppedEventMessage {
+  type: 'event';
+  event: 'stopped';
+  body?: {
+    reason?: string;
+    description?: string;
+    threadId?: number;
+  };
+}
+
+function isStoppedEventMessage(message: unknown): message is StoppedEventMessage {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+
+  const candidate = message as { type?: unknown; event?: unknown };
+  return candidate.type === 'event' && candidate.event === 'stopped';
 }
 
 async function writePortAndWorkspace({
@@ -196,10 +216,47 @@ export class IDEServer {
       const mcpServer = createMcpServer(this.diffManager, this.log);
 
       this.openFilesManager = new OpenFilesManager(context);
+      this.openFilesManager.setBreakpoints(
+        serializeBreakpoints(vscode.debug.breakpoints),
+      );
+
       const onDidChangeSubscription = this.openFilesManager.onDidChange(() => {
         this.broadcastIdeContextUpdate();
       });
-      context.subscriptions.push(onDidChangeSubscription);
+      const breakpointSubscription = vscode.debug.onDidChangeBreakpoints(() => {
+        this.openFilesManager?.setBreakpoints(
+          serializeBreakpoints(vscode.debug.breakpoints),
+        );
+      });
+      const debugTrackerFactory = vscode.debug.registerDebugAdapterTrackerFactory(
+        '*',
+        {
+          createDebugAdapterTracker: (session) => ({
+            onDidSendMessage: (message) => {
+              if (!isStoppedEventMessage(message)) {
+                return;
+              }
+
+              void captureDebugStop(session, message.body ?? {})
+                .then((snapshot) => {
+                  this.openFilesManager?.setLastDebugStop(snapshot);
+                })
+                .catch((error) => {
+                  const errorMessage =
+                    error instanceof Error ? error.message : String(error);
+                  this.log(
+                    `Failed to capture debug stop snapshot: ${errorMessage}`,
+                  );
+                });
+            },
+          }),
+        },
+      );
+      context.subscriptions.push(
+        onDidChangeSubscription,
+        breakpointSubscription,
+        debugTrackerFactory,
+      );
       const onDidChangeDiffSubscription = this.diffManager.onDidChange(
         (notification) => {
           for (const transport of Object.values(this.transports)) {

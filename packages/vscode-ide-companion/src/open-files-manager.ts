@@ -9,6 +9,10 @@ import type {
   File,
   IdeContext,
 } from '@google/gemini-cli-core/src/ide/types.js';
+import type {
+  IdeBreakpoint,
+  IdeDebugStop,
+} from '@google/gemini-cli-core/src/debug/types.js';
 
 export const MAX_FILES = 10;
 const MAX_SELECTED_TEXT_LENGTH = 16384; // 16 KiB limit
@@ -21,6 +25,8 @@ export class OpenFilesManager {
   readonly onDidChange = this.onDidChangeEmitter.event;
   private debounceTimer: NodeJS.Timeout | undefined;
   private openFiles: File[] = [];
+  private breakpoints: IdeBreakpoint[] = [];
+  private lastDebugStop: IdeDebugStop | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     const editorWatcher = vscode.window.onDidChangeActiveTextEditor(
@@ -86,6 +92,16 @@ export class OpenFilesManager {
     ) {
       this.addOrMoveToFront(vscode.window.activeTextEditor);
     }
+  }
+
+  setBreakpoints(breakpoints: IdeBreakpoint[]): void {
+    this.breakpoints = [...breakpoints];
+    this.fireWithDebounce();
+  }
+
+  setLastDebugStop(lastDebugStop: IdeDebugStop | undefined): void {
+    this.lastDebugStop = lastDebugStop;
+    this.fireWithDebounce();
   }
 
   private isFileUri(uri: vscode.Uri): boolean {
@@ -175,6 +191,8 @@ export class OpenFilesManager {
       workspaceState: {
         openFiles: [...this.openFiles],
         isTrusted: vscode.workspace.isTrusted,
+        breakpoints: [...this.breakpoints],
+        lastDebugStop: this.lastDebugStop,
       },
     };
   }
