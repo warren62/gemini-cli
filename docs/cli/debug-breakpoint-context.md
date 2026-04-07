@@ -1,12 +1,11 @@
-# Debug breakpoint context (MVP)
+# Debug breakpoint context
 
-The debug breakpoint context MVP adds debugger-aware context to Gemini CLI. It
-supports breakpoint target parsing, project debug config discovery, and IDE-fed
-debug state for breakpoints and paused executions.
+Gemini CLI includes debugger-aware context for breakpoint targets, project debug
+config discovery, and IDE-fed debug state for breakpoints and paused
+executions.
 
 <!-- prettier-ignore -->
 > [!NOTE]
-> This is an MVP focused on debug context, not a full standalone debugger.
 > Gemini CLI can inspect debug-related state, but it does not yet launch,
 > attach, pause, continue, or step through debug sessions on its own.
 
@@ -64,7 +63,7 @@ active project debug config, and review IDE-fed debug state.
 
 ### Current command behavior
 
-In this MVP:
+At present:
 
 - `/debug break` parses and normalizes a breakpoint target and provides that
   target as debug-aware context.
@@ -85,7 +84,7 @@ location if known, top stack frames, top locals, and a timestamp.
 
 ## Current limitations
 
-This MVP does **not** provide a standalone cross-runtime CLI debugger engine.
+Gemini CLI does not yet provide a standalone cross-runtime CLI debugger engine.
 The following debugger workflows are not yet implemented as first-class CLI
 operations:
 
@@ -98,8 +97,8 @@ operations:
 - step out
 - stop
 
-The focus of this phase is shared parsing and modeling, shared debug config
-support, IDE-to-CLI debug context plumbing, and a first-class CLI inspection
+The current implementation focuses on shared parsing and modeling, shared debug
+config support, IDE-to-CLI debug context plumbing, and a CLI inspection
 surface.
 
 ## Next steps
