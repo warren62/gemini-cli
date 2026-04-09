@@ -11,19 +11,24 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   discoverDebugConfiguration,
   loadDebugConfiguration,
+  resolveDebugConfiguration,
 } from './debugConfig.js';
 
 const tempDirs: string[] = [];
 
 async function makeTempDir(): Promise<string> {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gcli-debug-config-'));
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'gcli-debug-config-'),
+  );
   tempDirs.push(tempDir);
   return tempDir;
 }
 
 afterEach(async () => {
   await Promise.all(
-    tempDirs.splice(0).map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })),
+    tempDirs
+      .splice(0)
+      .map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })),
   );
 });
 
@@ -93,5 +98,27 @@ describe('debugConfig', () => {
     );
 
     await expect(loadDebugConfiguration(configPath)).rejects.toThrow();
+  });
+
+  it('resolves a named configuration from discovery', async () => {
+    const rootDir = await makeTempDir();
+    await fs.mkdir(path.join(rootDir, '.gemini'), { recursive: true });
+    await fs.writeFile(
+      path.join(rootDir, '.gemini', 'debug.json'),
+      JSON.stringify({
+        configurations: [
+          {
+            name: 'app',
+            type: 'node',
+            request: 'launch',
+            program: 'dist/index.js',
+          },
+        ],
+      }),
+    );
+
+    const resolved = await resolveDebugConfiguration('app', rootDir);
+    expect(resolved.configuration.name).toBe('app');
+    expect(resolved.path).toBe(path.join(rootDir, '.gemini', 'debug.json'));
   });
 });

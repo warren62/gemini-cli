@@ -17,6 +17,34 @@ const MAX_STACK_FRAMES = 5;
 const MAX_LOCALS = 10;
 const MAX_VALUE_LENGTH = 200;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getStringProperty(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getArrayProperty(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): unknown[] {
+  if (!record) {
+    return [];
+  }
+
+  const value = record[key];
+  return Array.isArray(value) ? value : [];
+}
+
 function truncateValue(value: unknown): string {
   const stringValue = String(value ?? '');
   return stringValue.length > MAX_VALUE_LENGTH
@@ -33,8 +61,8 @@ function toPositiveInt(value: unknown): number | undefined {
 function frameToBreakpoint(
   frame: Record<string, unknown> | undefined,
 ): IdeBreakpoint | undefined {
-  const source = frame?.['source'] as Record<string, unknown> | undefined;
-  const filePath = typeof source?.['path'] === 'string' ? source['path'] : undefined;
+  const source = isRecord(frame?.['source']) ? frame['source'] : undefined;
+  const filePath = getStringProperty(source, 'path');
   const line = toPositiveInt(frame?.['line']);
   const column = toPositiveInt(frame?.['column']);
 
@@ -50,11 +78,11 @@ function frameToBreakpoint(
 }
 
 function frameToIdeFrame(frame: Record<string, unknown>): IdeDebugFrame {
-  const source = frame['source'] as Record<string, unknown> | undefined;
+  const source = isRecord(frame['source']) ? frame['source'] : undefined;
   return {
     id: toPositiveInt(frame['id']),
-    name: typeof frame['name'] === 'string' ? frame['name'] : 'unknown',
-    filePath: typeof source?.['path'] === 'string' ? source['path'] : undefined,
+    name: getStringProperty(frame, 'name') ?? 'unknown',
+    filePath: getStringProperty(source, 'path'),
     line: toPositiveInt(frame['line']),
     column: toPositiveInt(frame['column']),
   };
@@ -97,66 +125,67 @@ export async function captureDebugStop(
   let location: IdeBreakpoint | undefined;
 
   if (threadId !== undefined) {
-    const stackTraceResponse = (await session
+    const stackTraceResponse: unknown = await session
       .customRequest('stackTrace', {
         threadId,
         startFrame: 0,
         levels: MAX_STACK_FRAMES,
       })
-      .catch(() => undefined)) as
-      | { stackFrames?: Array<Record<string, unknown>> }
-      | undefined;
+      .catch(() => undefined);
+    const stackTraceRecord = isRecord(stackTraceResponse)
+      ? stackTraceResponse
+      : undefined;
 
-    const rawFrames = Array.isArray(stackTraceResponse?.stackFrames)
-      ? stackTraceResponse.stackFrames
-      : [];
+    const rawFrames = getArrayProperty(stackTraceRecord, 'stackFrames').flatMap(
+      (frame) => (isRecord(frame) ? [frame] : []),
+    );
     frames = rawFrames.slice(0, MAX_STACK_FRAMES).map(frameToIdeFrame);
-    location = frameToBreakpoint(rawFrames[0]);
+    const firstFrame = rawFrames[0];
+    location = frameToBreakpoint(firstFrame);
 
-    const topFrameId = toPositiveInt(rawFrames[0]?.['id']);
+    const topFrameId = toPositiveInt(firstFrame?.['id']);
     if (topFrameId !== undefined) {
-      const scopesResponse = (await session
+      const scopesResponse: unknown = await session
         .customRequest('scopes', {
           frameId: topFrameId,
         })
-        .catch(() => undefined)) as
-        | { scopes?: Array<Record<string, unknown>> }
-        | undefined;
+        .catch(() => undefined);
+      const scopesRecord = isRecord(scopesResponse)
+        ? scopesResponse
+        : undefined;
 
-      const scopes = Array.isArray(scopesResponse?.scopes)
-        ? scopesResponse.scopes
-        : [];
+      const scopes = getArrayProperty(scopesRecord, 'scopes').flatMap(
+        (scope) => (isRecord(scope) ? [scope] : []),
+      );
       const localsScope = scopes.find((scope) => {
-        const name = typeof scope['name'] === 'string' ? scope['name'] : '';
+        const name = getStringProperty(scope, 'name') ?? '';
         return (
           name.toLowerCase().includes('local') &&
           toPositiveInt(scope['variablesReference']) !== undefined
         );
       });
 
-      const variablesReference = toPositiveInt(localsScope?.['variablesReference']);
+      const variablesReference = toPositiveInt(
+        localsScope?.['variablesReference'],
+      );
       if (variablesReference !== undefined) {
-        const variablesResponse = (await session
+        const variablesResponse: unknown = await session
           .customRequest('variables', {
             variablesReference,
             count: MAX_LOCALS,
           })
-          .catch(() => undefined)) as
-          | { variables?: Array<Record<string, unknown>> }
-          | undefined;
+          .catch(() => undefined);
+        const variablesRecord = isRecord(variablesResponse)
+          ? variablesResponse
+          : undefined;
 
-        locals = (Array.isArray(variablesResponse?.variables)
-          ? variablesResponse.variables
-          : [])
+        locals = getArrayProperty(variablesRecord, 'variables')
+          .flatMap((variable) => (isRecord(variable) ? [variable] : []))
           .slice(0, MAX_LOCALS)
           .map((variable) => ({
-            name:
-              typeof variable['name'] === 'string' ? variable['name'] : 'unknown',
+            name: getStringProperty(variable, 'name') ?? 'unknown',
             value: truncateValue(variable['value']),
-            type:
-              typeof variable['type'] === 'string'
-                ? variable['type']
-                : undefined,
+            type: getStringProperty(variable, 'type') ?? undefined,
           }));
       }
     }

@@ -164,6 +164,10 @@ export * from './ide/types.js';
 export * from './debug/types.js';
 export * from './debug/debugTarget.js';
 export * from './debug/debugConfig.js';
+export * from './debug/session/types.js';
+export * from './debug/session/breakpointStore.js';
+export * from './debug/session/pausedSnapshot.js';
+export * from './debug/session/sessionManager.js';
 
 // Export Shell Execution Service
 export * from './services/shellExecutionService.js';

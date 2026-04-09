@@ -1,46 +1,71 @@
-# Debug breakpoint context
+# Gemini CLI debugger
 
-Gemini CLI includes debugger-aware context for breakpoint targets, project debug
-config discovery, and IDE-fed debug state for breakpoints and paused
-executions.
+Gemini CLI now has a Phase 2 debugger MVP.
 
-<!-- prettier-ignore -->
-> [!NOTE]
-> Gemini CLI can inspect debug-related state, but it does not yet launch,
-> attach, pause, continue, or step through debug sessions on its own.
+Phase 1 only made Gemini CLI debugger-aware for prompt context and IDE-fed
+status. Phase 2 adds a real CLI-owned debugger model with stored breakpoints,
+session lifecycle state, and a real Node.js runtime path.
+
+## What Phase 2 adds
+
+- CLI-owned breakpoint storage
+- a CLI-owned debug session store
+- real session start and attach flows from `.gemini/debug.json`
+- paused runtime snapshots captured from the active session
+- `/debug status` driven by CLI-owned state first
+
+The VS Code companion still publishes IDE breakpoints and paused-state context,
+but that is now secondary mirror context instead of the authoritative debugger
+model.
+
+## Supported runtime
+
+Phase 2 currently supports a narrow real-runtime path for Node.js
+configurations:
+
+- `type: "node"`
+- `type: "pwa-node"` as a compatibility alias
+
+Other debug adapter/runtime types are not yet implemented in this phase.
 
 ## Breakpoint target syntax
 
-Gemini CLI recognizes breakpoint targets in the form `@file:line` or
-`@file:line:column`.
+Use `@file:line` or `@file:line:column`.
+
+Examples:
 
 ```text
-@src/foo.ts:87
-src/foo.ts:87
-@src/foo.ts:87:4
+@src/index.ts:10
+src/index.ts:10
+@src/index.ts:10:4
 ```
 
-This syntax mirrors Gemini CLI's existing `@path` pattern, but these values are
-interpreted as debugger breakpoint targets rather than direct file inclusion.
+These values now represent real CLI-owned debugger breakpoints. If a session is
+already active, Gemini CLI pushes them into the active debug adapter. If no
+session is active yet, Gemini CLI stores them and applies them when a session
+starts.
 
 ## Debug config discovery
 
-Gemini CLI searches upward from the current working directory for one of the
-following files:
+Gemini CLI searches upward from the current working directory for one of these
+files:
 
 ```text
 .gemini/debug.json
 .gemini/debug.config.json
 ```
 
-The current config schema supports launch-style and attach-style configuration
-entries with fields including:
+## Config shape
+
+Each configuration supports these fields:
 
 - `name`
 - `type`
 - `request`
 - `cwd`
 - `program`
+- `runtimeExecutable`
+- `runtimeArgs`
 - `args`
 - `env`
 - `host`
@@ -49,60 +74,82 @@ entries with fields including:
 - `breakpoints`
 - `adapterOptions`
 
+`runtimeExecutable` and `runtimeArgs` are useful for Node launches that should
+run through something other than the default Node executable.
+
+Example:
+
+```json
+{
+  "configurations": [
+    {
+      "name": "app",
+      "type": "node",
+      "request": "launch",
+      "cwd": ".",
+      "program": "dist/index.js",
+      "stopOnEntry": false,
+      "breakpoints": [
+        {
+          "raw": "@src/index.ts:10",
+          "filePath": "src/index.ts",
+          "line": 10,
+          "normalized": "@src/index.ts:10"
+        }
+      ]
+    },
+    {
+      "name": "attach-local",
+      "type": "node",
+      "request": "attach",
+      "host": "127.0.0.1",
+      "port": 9229
+    }
+  ]
+}
+```
+
 ## `/debug` commands
 
-Use the `/debug` command group to inspect parsed breakpoint targets, view the
-active project debug config, and review IDE-fed debug state.
+Phase 2 turns `/debug` into a real operational debugger surface:
 
 ```text
-/debug break @src/foo.ts:87
+/debug break @src/index.ts:10
+/debug break list
+/debug break remove bp-1
 /debug config show
 /debug config validate
+/debug start app
+/debug attach attach-local
+/debug continue
+/debug pause
+/debug stop
 /debug status
 ```
 
-### Current command behavior
+## `/debug status`
 
-At present:
+`/debug status` now reports CLI-owned debugger state first, including:
 
-- `/debug break` parses and normalizes a breakpoint target and provides that
-  target as debug-aware context.
-- `/debug config show` prints the discovered debug config file and its contents.
-- `/debug config validate` validates the discovered debug config.
-- `/debug status` displays IDE-fed breakpoint and paused-state information, when
-  available.
+- session lifecycle state
+- active config and request type
+- stored breakpoint count
+- latest paused snapshot
+- top locals when paused
 
-## IDE-fed debug state
-
-When the IDE companion is connected, Gemini CLI can receive:
-
-- source breakpoints
-- the latest paused debug stop snapshot
-
-The paused snapshot is intentionally bounded and includes the stop reason,
-location if known, top stack frames, top locals, and a timestamp.
+If the IDE companion is connected, Gemini CLI may also show IDE mirror context
+for comparison, but that mirror state is not the source of truth for CLI-owned
+debug sessions.
 
 ## Current limitations
 
-Gemini CLI does not yet provide a standalone cross-runtime CLI debugger engine.
-The following debugger workflows are not yet implemented as first-class CLI
-operations:
+This is still an MVP. Phase 2 does not yet include:
 
-- launch
-- attach
-- continue
-- pause
-- step over
-- step into
-- step out
-- stop
+- full multi-language debug adapter support
+- stepping UX
+- watch expressions
+- multi-session orchestration
+- automatic IDE breakpoint resync heuristics
 
-The current implementation focuses on shared parsing and modeling, shared debug
-config support, IDE-to-CLI debug context plumbing, and a CLI inspection
-surface.
-
-## Next steps
-
-- Learn more about [IDE integration](../ide-integration.md).
-- See the [command reference](../reference/commands.md) for the broader CLI
-  command surface.
+Phase 2 is specifically the milestone where Gemini CLI moves from "debug-context
+aware" to "able to own a minimal real debug session."

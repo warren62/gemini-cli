@@ -8,6 +8,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   DebugConfigurationFileSchema,
+  type DebugConfiguration,
   type DebugConfigurationFile,
 } from './types.js';
 
@@ -20,6 +21,15 @@ export interface DebugConfigurationDiscovery {
   path: string;
   config: DebugConfigurationFile;
   raw: string;
+}
+
+export interface ResolvedDebugConfiguration
+  extends DebugConfigurationDiscovery {
+  configuration: DebugConfiguration;
+}
+
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
 
 export async function discoverDebugConfiguration(
@@ -57,10 +67,35 @@ export async function loadDebugConfiguration(
       raw,
     };
   } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException;
-    if (nodeError?.code === 'ENOENT') {
+    if (isErrnoException(error) && error.code === 'ENOENT') {
       return null;
     }
     throw error;
   }
+}
+
+export async function resolveDebugConfiguration(
+  configName: string,
+  startDir = process.cwd(),
+): Promise<ResolvedDebugConfiguration> {
+  const discovered = await discoverDebugConfiguration(startDir);
+  if (!discovered) {
+    throw new Error(
+      'No debug config found. Looked for .gemini/debug.json and .gemini/debug.config.json.',
+    );
+  }
+
+  const configuration = discovered.config.configurations.find(
+    (candidate) => candidate.name === configName,
+  );
+  if (!configuration) {
+    throw new Error(
+      `Debug configuration "${configName}" was not found in ${discovered.path}.`,
+    );
+  }
+
+  return {
+    ...discovered,
+    configuration,
+  };
 }

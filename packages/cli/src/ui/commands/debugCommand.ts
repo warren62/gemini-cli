@@ -5,11 +5,13 @@
  */
 
 import {
+  debugSessionManager,
   ideContextStore,
   type MessageActionReturn,
   discoverDebugConfiguration,
   loadDebugConfiguration,
-  parseDebugBreakpointTarget,
+  type DebugPausedSnapshot,
+  type DebugStoredBreakpoint,
   type IdeBreakpoint,
   type IdeDebugStop,
 } from '@google/gemini-cli-core';
@@ -21,43 +23,91 @@ function formatBreakpoint(breakpoint: IdeBreakpoint): string {
   return `${breakpoint.filePath}:${breakpoint.line}${suffix}`;
 }
 
-function formatStop(stop: IdeDebugStop): string {
-  const location = stop.location ? formatBreakpoint(stop.location) : 'unknown';
-  const topFrame = stop.frames?.[0];
-  const locals = (stop.locals ?? [])
+function formatStoredBreakpoint(breakpoint: DebugStoredBreakpoint): string {
+  const source =
+    breakpoint.source === 'cli'
+      ? 'cli'
+      : breakpoint.source === 'config'
+        ? 'config'
+        : 'ide';
+  return `${breakpoint.id} ${breakpoint.target.normalized} (${source})`;
+}
+
+function formatPausedSnapshot(
+  heading: string,
+  snapshot: DebugPausedSnapshot | IdeDebugStop,
+): string[] {
+  const location = snapshot.location
+    ? formatBreakpoint(snapshot.location)
+    : 'unknown';
+  const topFrame = snapshot.frames?.[0];
+  const locals = (snapshot.locals ?? [])
     .slice(0, 5)
-    .map((variable) => `${variable.name}=${variable.value}`)
+    .map(
+      (variable: { name: string; value: string }) =>
+        `${variable.name}=${variable.value}`,
+    )
     .join(', ');
 
   return [
-    `Last stop reason: ${stop.reason}`,
-    stop.description ? `Description: ${stop.description}` : undefined,
-    `Session: ${stop.sessionName ?? 'unknown'}`,
-    `Thread: ${stop.threadId ?? 'unknown'}`,
+    heading,
+    `Reason: ${snapshot.reason}`,
+    snapshot.description ? `Description: ${snapshot.description}` : undefined,
+    `Session: ${snapshot.sessionName ?? 'unknown'}`,
+    `Thread: ${snapshot.threadId ?? 'unknown'}`,
     `Location: ${location}`,
     topFrame
       ? `Top frame: ${topFrame.name}${topFrame.filePath ? ` (${topFrame.filePath}:${topFrame.line ?? '?'})` : ''}`
       : undefined,
     locals ? `Locals: ${locals}` : undefined,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].filter((line): line is string => Boolean(line));
 }
 
-async function handleBreakCommand(
+async function handleBreakAddCommand(
   args: string,
-  addInfo: (message: string) => void,
-): Promise<SlashCommandActionReturn> {
-  const parsed = parseDebugBreakpointTarget(args.trim());
-  addInfo(`Parsed breakpoint target: ${parsed.normalized}`);
-
+): Promise<MessageActionReturn> {
+  const result = await debugSessionManager.addBreakpoint(args.trim());
+  const session = debugSessionManager.getStatus().session;
+  const summary = result.created ? 'Added' : 'Reused';
   return {
-    type: 'submit_prompt',
-    content: [
-      {
-        text: `Focus on debug breakpoint target ${parsed.normalized}. Treat this as the primary paused-code location. File: ${parsed.filePath}. Line: ${parsed.line}.${parsed.column ? ` Column: ${parsed.column}.` : ''}`,
-      },
-    ],
+    type: 'message',
+    messageType: 'info',
+    content: `${summary} breakpoint ${result.breakpoint.id} at ${result.breakpoint.target.normalized}${session ? ` for session ${session.configName}.` : '.'}`,
+  };
+}
+
+async function handleBreakListCommand(): Promise<MessageActionReturn> {
+  const breakpoints = debugSessionManager.listBreakpoints();
+  return {
+    type: 'message',
+    messageType: 'info',
+    content:
+      breakpoints.length === 0
+        ? 'No CLI-owned breakpoints are stored.'
+        : [
+            `CLI-owned breakpoints: ${breakpoints.length}`,
+            ...breakpoints.map(formatStoredBreakpoint),
+          ].join('\n'),
+  };
+}
+
+async function handleBreakRemoveCommand(
+  args: string,
+): Promise<MessageActionReturn> {
+  if (!args.trim()) {
+    return {
+      type: 'message',
+      messageType: 'error',
+      content:
+        'Missing breakpoint id or target. Usage: /debug break remove <bp-id|@file:line>',
+    };
+  }
+
+  const removed = await debugSessionManager.removeBreakpoint(args.trim());
+  return {
+    type: 'message',
+    messageType: 'info',
+    content: `Removed breakpoint ${removed.id} at ${removed.target.normalized}.`,
   };
 }
 
@@ -67,7 +117,8 @@ async function handleConfigShowCommand(): Promise<MessageActionReturn> {
     return {
       type: 'message',
       messageType: 'error',
-      content: 'No debug config found. Looked for .gemini/debug.json and .gemini/debug.config.json.',
+      content:
+        'No debug config found. Looked for .gemini/debug.json and .gemini/debug.config.json.',
     };
   }
 
@@ -84,7 +135,8 @@ async function handleConfigValidateCommand(): Promise<MessageActionReturn> {
     return {
       type: 'message',
       messageType: 'error',
-      content: 'No debug config found. Looked for .gemini/debug.json and .gemini/debug.config.json.',
+      content:
+        'No debug config found. Looked for .gemini/debug.json and .gemini/debug.config.json.',
     };
   }
 
@@ -96,16 +148,99 @@ async function handleConfigValidateCommand(): Promise<MessageActionReturn> {
   };
 }
 
+async function handleStartCommand(
+  configName: string,
+  mode: 'start' | 'attach',
+): Promise<MessageActionReturn> {
+  if (!configName.trim()) {
+    return {
+      type: 'message',
+      messageType: 'error',
+      content: `Missing configuration name. Usage: /debug ${mode} <config-name>`,
+    };
+  }
+
+  const session =
+    mode === 'attach'
+      ? await debugSessionManager.attachSession(configName.trim())
+      : await debugSessionManager.startSession(configName.trim());
+  return {
+    type: 'message',
+    messageType: 'info',
+    content: `Debug session ${session.configName} (${session.requestType}) is ${session.status}.`,
+  };
+}
+
+async function handleContinueCommand(): Promise<MessageActionReturn> {
+  const session = await debugSessionManager.continueSession();
+  return {
+    type: 'message',
+    messageType: 'info',
+    content: `Continued debug session ${session.configName}.`,
+  };
+}
+
+async function handlePauseCommand(): Promise<MessageActionReturn> {
+  const session = await debugSessionManager.pauseSession();
+  return {
+    type: 'message',
+    messageType: 'info',
+    content: `Pause requested for debug session ${session.configName}.`,
+  };
+}
+
+async function handleStopCommand(): Promise<MessageActionReturn> {
+  const session = await debugSessionManager.stopSession();
+  return {
+    type: 'message',
+    messageType: 'info',
+    content: `Stopped debug session ${session.configName}.`,
+  };
+}
+
 async function handleStatusCommand(): Promise<MessageActionReturn> {
+  const status = debugSessionManager.getStatus();
+  const breakpoints = debugSessionManager.listBreakpoints();
   const workspaceState = ideContextStore.get()?.workspaceState;
-  const breakpoints = workspaceState?.breakpoints ?? [];
-  const lastStop = workspaceState?.lastDebugStop;
+  const ideBreakpoints = workspaceState?.breakpoints ?? [];
+  const ideLastStop = workspaceState?.lastDebugStop;
 
   const lines = [
-    `Breakpoints: ${breakpoints.length}`,
-    ...breakpoints.slice(0, 5).map((breakpoint) => `- ${formatBreakpoint(breakpoint)}`),
-    lastStop ? formatStop(lastStop) : 'Last stop reason: none',
+    `CLI session state: ${status.lifecycleStatus}`,
+    `CLI breakpoints: ${breakpoints.length}`,
   ];
+
+  if (status.session) {
+    lines.push(`Active config: ${status.session.configName}`);
+    lines.push(`Adapter/runtime: ${status.session.adapterType}`);
+    lines.push(`Request: ${status.session.requestType}`);
+    if (status.session.latestPausedSnapshot) {
+      lines.push(
+        ...formatPausedSnapshot(
+          'CLI paused snapshot:',
+          status.session.latestPausedSnapshot,
+        ),
+      );
+    } else {
+      lines.push('CLI paused snapshot: none');
+    }
+  } else {
+    lines.push('Active config: none');
+    lines.push('CLI paused snapshot: none');
+  }
+
+  if (ideBreakpoints.length > 0 || ideLastStop) {
+    lines.push('IDE mirror context:');
+    lines.push(`IDE breakpoints: ${ideBreakpoints.length}`);
+    lines.push(
+      ...ideBreakpoints
+        .slice(0, 5)
+        .map((breakpoint) => `- ${formatBreakpoint(breakpoint)}`),
+    );
+    if (ideLastStop) {
+      lines.push(...formatPausedSnapshot('IDE latest stop:', ideLastStop));
+    }
+  }
 
   return {
     type: 'message',
@@ -114,29 +249,40 @@ async function handleStatusCommand(): Promise<MessageActionReturn> {
   };
 }
 
-const breakCommand: SlashCommand = {
-  name: 'break',
-  description: 'Parse and normalize a breakpoint target such as @src/foo.ts:87',
+const breakListCommand: SlashCommand = {
+  name: 'list',
+  description: 'List CLI-owned breakpoints',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: true,
+  takesArgs: false,
+  action: async () => handleBreakListCommand(),
+};
+
+const breakRemoveCommand: SlashCommand = {
+  name: 'remove',
+  description: 'Remove a stored breakpoint by id or target',
   kind: CommandKind.BUILT_IN,
   autoExecute: false,
-  action: async (context, args) => {
+  action: async (_context, args) => handleBreakRemoveCommand(args),
+};
+
+const breakCommand: SlashCommand = {
+  name: 'break',
+  description: 'Create, list, or remove real CLI-owned breakpoints',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: false,
+  subCommands: [breakListCommand, breakRemoveCommand],
+  action: async (_context, args): Promise<SlashCommandActionReturn> => {
     if (!args.trim()) {
       return {
         type: 'message',
         messageType: 'error',
-        content: 'Missing breakpoint target. Usage: /debug break @src/foo.ts:87',
+        content:
+          'Missing breakpoint target. Usage: /debug break @src/foo.ts:87, /debug break list, or /debug break remove <bp-id|@file:line>',
       };
     }
 
-    return handleBreakCommand(args, (message) => {
-      context.ui.addItem(
-        {
-          type: 'info',
-          text: message,
-        },
-        Date.now(),
-      );
-    });
+    return handleBreakAddCommand(args);
   },
 };
 
@@ -164,24 +310,77 @@ const configCommand: SlashCommand = {
   subCommands: [configShowCommand, configValidateCommand],
 };
 
-const statusCommand: SlashCommand = {
-  name: 'status',
-  description: 'Show the current IDE-fed breakpoint and paused debug state',
+const startCommand: SlashCommand = {
+  name: 'start',
+  description: 'Start a real debug session from project config',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: false,
+  action: async (_context, args) => handleStartCommand(args, 'start'),
+};
+
+const attachCommand: SlashCommand = {
+  name: 'attach',
+  description: 'Attach to a real debug session from project config',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: false,
+  action: async (_context, args) => handleStartCommand(args, 'attach'),
+};
+
+const continueCommand: SlashCommand = {
+  name: 'continue',
+  description: 'Continue the active paused debug session',
   kind: CommandKind.BUILT_IN,
   autoExecute: true,
+  takesArgs: false,
+  action: async () => handleContinueCommand(),
+};
+
+const pauseCommand: SlashCommand = {
+  name: 'pause',
+  description: 'Pause the active debug session if supported',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: true,
+  takesArgs: false,
+  action: async () => handlePauseCommand(),
+};
+
+const stopCommand: SlashCommand = {
+  name: 'stop',
+  description: 'Stop the active debug session',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: true,
+  takesArgs: false,
+  action: async () => handleStopCommand(),
+};
+
+const statusCommand: SlashCommand = {
+  name: 'status',
+  description: 'Show CLI-owned debugger state and the latest IDE mirror state',
+  kind: CommandKind.BUILT_IN,
+  autoExecute: true,
+  takesArgs: false,
   action: async () => handleStatusCommand(),
 };
 
 export const debugCommand: SlashCommand = {
   name: 'debug',
-  description: 'Inspect breakpoint targets, debug config, and IDE debug state',
+  description: 'Control Gemini CLI debug sessions and breakpoint state',
   kind: CommandKind.BUILT_IN,
   autoExecute: false,
-  subCommands: [breakCommand, configCommand, statusCommand],
+  subCommands: [
+    breakCommand,
+    configCommand,
+    startCommand,
+    attachCommand,
+    continueCommand,
+    pauseCommand,
+    stopCommand,
+    statusCommand,
+  ],
   action: async () => ({
     type: 'message',
     messageType: 'info',
     content:
-      'Usage: /debug break <target>, /debug config show, /debug config validate, or /debug status',
+      'Usage: /debug break <target>, /debug break list, /debug break remove <id>, /debug config show, /debug config validate, /debug start <config>, /debug attach <config>, /debug continue, /debug pause, /debug stop, or /debug status',
   }),
 };

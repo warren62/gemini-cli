@@ -59,7 +59,9 @@ interface StoppedEventMessage {
   };
 }
 
-function isStoppedEventMessage(message: unknown): message is StoppedEventMessage {
+function isStoppedEventMessage(
+  message: unknown,
+): message is StoppedEventMessage {
   if (!message || typeof message !== 'object') {
     return false;
   }
@@ -228,9 +230,8 @@ export class IDEServer {
           serializeBreakpoints(vscode.debug.breakpoints),
         );
       });
-      const debugTrackerFactory = vscode.debug.registerDebugAdapterTrackerFactory(
-        '*',
-        {
+      const debugTrackerFactory =
+        vscode.debug.registerDebugAdapterTrackerFactory('*', {
           createDebugAdapterTracker: (session) => ({
             onDidSendMessage: (message) => {
               if (!isStoppedEventMessage(message)) {
@@ -250,8 +251,7 @@ export class IDEServer {
                 });
             },
           }),
-        },
-      );
+        });
       context.subscriptions.push(
         onDidChangeSubscription,
         breakpointSubscription,

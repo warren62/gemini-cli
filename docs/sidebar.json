@@ -97,6 +97,10 @@
           },
           { "label": "Agent Skills", "slug": "docs/cli/skills" },
           { "label": "Checkpointing", "slug": "docs/cli/checkpointing" },
+          {
+            "label": "Debugger",
+            "slug": "docs/cli/debug-breakpoint-context"
+          },
           { "label": "Headless mode", "slug": "docs/cli/headless" },
           {
             "label": "Git worktrees",

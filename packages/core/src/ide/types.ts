@@ -5,10 +5,7 @@
  */
 
 import { z } from 'zod';
-import {
-  IdeBreakpointSchema,
-  IdeDebugStopSchema,
-} from '../debug/types.js';
+import { IdeBreakpointSchema, IdeDebugStopSchema } from '../debug/types.js';
 
 /**
  * A file that is open in the IDE.
